@@ -1,4 +1,4 @@
-# KHM-TtS — Single-Speaker, Browser-Deployed (ONNX Runtime Web)
+# KHM-TtS - Single-Speaker, Browser-Deployed (ONNX Runtime Web)
 
 This is a mini-project Text-to-Speech pipeline.
 
