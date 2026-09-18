@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local/generated runtime artifacts
+*.log
+*.err.log
+*.wav
+eval_results/
+
+# Training outputs and datasets
+checkpoints/
+km_kh_male/wavs/
+km_kh_male/processed/

@@ -1,0 +1,12 @@
+torch>=2.1
+torchaudio>=2.1
+
+scipy
+librosa
+soundfile
+g2p_en
+tqdm
+tensorboard
+textgrid
+onnx
+onnxruntime
