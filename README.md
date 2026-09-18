@@ -1,5 +1,7 @@
 # KHM-TtS — Single-Speaker, Browser-Deployed (ONNX Runtime Web)
 
+This is a mini-project Text-to-Speech pipeline.
+
 A small, non-autoregressive text-to-speech pipeline designed to be:
 - **Trainable on a single local GPU** in hours, not days
 - **Fast at inference** — no autoregressive decoding loop, so no accumulating latency per character
