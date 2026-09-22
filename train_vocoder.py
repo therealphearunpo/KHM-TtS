@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-import librosa
+import torchaudio.transforms as T
 
 from model.vocoder import Generator, Discriminator
 
@@ -27,16 +27,22 @@ HOP_LENGTH = 256
 N_MELS = 80
 N_FFT = 1024
 WIN_LENGTH = 1024
-FMIN = 0
-FMAX = 8000
+FMIN = 0.0
+FMAX = 8000.0
 
 
-def build_mel(wav: np.ndarray) -> np.ndarray:
-    mel = librosa.feature.melspectrogram(
-        y=wav, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
-        win_length=WIN_LENGTH, n_mels=N_MELS, fmin=FMIN, fmax=FMAX, power=1.0,
-    )
-    return np.log(np.clip(mel, a_min=1e-5, a_max=None)).astype(np.float32)
+def create_mel_transform(device):
+    return T.MelSpectrogram(
+        sample_rate=SAMPLE_RATE,
+        n_fft=N_FFT,
+        win_length=WIN_LENGTH,
+        hop_length=HOP_LENGTH,
+        n_mels=N_MELS,
+        f_min=FMIN,
+        f_max=FMAX,
+        power=1.0,
+    ).to(device)
+
 
 SEGMENT_FRAMES = 32  # 32 frames * 256 hop = 8,192 audio samples
 
@@ -95,6 +101,8 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--log_interval", type=int, default=10)
     ap.add_argument("--max_steps", type=int, default=0, help="Optional max steps to run")
+    ap.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint to resume weights from")
+    ap.add_argument("--resume", action="store_true", default=False, help="Resume from latest checkpoint")
     ap.add_argument("--out_dir", default="checkpoints/vocoder")
     args = ap.parse_args()
 
@@ -113,9 +121,29 @@ def main():
     opt_g = torch.optim.AdamW(gen.parameters(), lr=args.lr, betas=(0.8, 0.99))
     opt_d = torch.optim.AdamW(disc.parameters(), lr=args.lr, betas=(0.8, 0.99))
     writer = SummaryWriter(os.path.join(args.out_dir, "logs"))
+    mel_transform = create_mel_transform(device)
 
-    step = 0
-    for epoch in range(args.epochs):
+    start_epoch = 0
+    if args.resume and not args.checkpoint:
+        latest = os.path.join(args.out_dir, "latest_vocoder.pt")
+        best = os.path.join(args.out_dir, "best_vocoder.pt")
+        if os.path.exists(latest):
+            args.checkpoint = latest
+        elif os.path.exists(best):
+            args.checkpoint = best
+
+    if args.checkpoint and os.path.exists(args.checkpoint):
+        ckpt = torch.load(args.checkpoint, map_location=device)
+        if "gen" in ckpt:
+            gen.load_state_dict(ckpt["gen"])
+        if "disc" in ckpt:
+            disc.load_state_dict(ckpt["disc"])
+        if "epoch" in ckpt:
+            start_epoch = ckpt["epoch"] + 1
+        print(f"Loaded vocoder checkpoint from {args.checkpoint}, resuming at epoch {start_epoch}")
+
+    step = start_epoch * len(train_dl)
+    for epoch in range(start_epoch, args.epochs):
         gen.train()
         disc.train()
 
@@ -138,22 +166,33 @@ def main():
             _, feats_real = disc(wav)
             adv_loss = torch.mean((d_fake_for_g - 1) ** 2)
             fm_loss = sum(F.l1_loss(ff, fr.detach()) for ff, fr in zip(feats_fake, feats_real))
-            g_loss = adv_loss + 2.0 * fm_loss
+
+            # Spectral Mel Reconstruction Loss (essential for speech quality)
+            mel_fake = torch.log(torch.clamp(mel_transform(wav_gen.squeeze(1)), min=1e-5))
+            min_mel_len = min(mel_fake.shape[2], mel.shape[2])
+            mel_loss = F.l1_loss(mel_fake[:, :, :min_mel_len], mel[:, :, :min_mel_len]) * 45.0
+
+            g_loss = adv_loss + 2.0 * fm_loss + mel_loss
 
             opt_g.zero_grad()
             g_loss.backward()
             opt_g.step()
 
             if step % args.log_interval == 0:
-                print(f"epoch {epoch:03d} step {step:05d} | d_loss: {d_loss.item():.4f} | g_loss: {g_loss.item():.4f}", flush=True)
+                print(f"epoch {epoch:03d} step {step:05d} | d_loss: {d_loss.item():.4f} | g_loss: {g_loss.item():.4f} | mel_loss: {mel_loss.item():.4f}", flush=True)
                 writer.add_scalar("train/d_loss", d_loss.item(), step)
                 writer.add_scalar("train/g_loss", g_loss.item(), step)
+                writer.add_scalar("train/mel_loss", mel_loss.item(), step)
             step += 1
 
             if args.max_steps > 0 and step >= args.max_steps:
                 break
         if args.max_steps > 0 and step >= args.max_steps:
             break
+
+        # Checkpoints
+        latest_path = os.path.join(args.out_dir, "latest_vocoder.pt")
+        torch.save({"gen": gen.state_dict(), "disc": disc.state_dict(), "epoch": epoch}, latest_path)
 
         if epoch % 20 == 0 or epoch == args.epochs - 1:
             ckpt_path = os.path.join(args.out_dir, f"epoch_{epoch}.pt")

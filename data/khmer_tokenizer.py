@@ -12,6 +12,10 @@ class KhmerTokenizer:
     def __init__(self, vocab: Optional[Dict[str, int]] = None, vocab_path: Optional[str] = None):
         self.normalizer = KhmerNormalizer()
 
+        if isinstance(vocab, str) and vocab_path is None:
+            vocab_path = vocab
+            vocab = None
+
         if vocab is not None:
             self.vocab = vocab
         elif vocab_path is not None and os.path.exists(vocab_path):

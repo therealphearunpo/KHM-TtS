@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.py[cod]
+scratch/
 
 # Local/generated runtime artifacts
 *.log
@@ -12,3 +13,4 @@ eval_results/
 checkpoints/
 km_kh_male/wavs/
 km_kh_male/processed/
+*.zip

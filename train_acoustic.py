@@ -6,11 +6,12 @@ Supports:
 - Automatic best checkpoint saving & TensorBoard metrics
 
 Usage:
-  python train_acoustic.py --data_dir km_kh_male --epochs 100 --batch_size 16
+    python train_acoustic.py --data_dir km_kh_male --epochs 100 --batch_size 16
 """
 import argparse
 import json
 import os
+import sys
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -89,7 +90,9 @@ def evaluate_val(model, val_dl, device):
             mel_pred, log_dur_pred, _ = model(phon, durations=dur, max_mel_len=mel_len)
 
             mask = mel_mask.unsqueeze(-1)
-            mel_l = F.l1_loss(mel_pred * mask, mel_target * mask, reduction="sum") / mask.sum()
+            # Normalize by (frames * n_mels) for true per-element MAE
+            n_mels = mel_target.size(-1)
+            mel_l = F.l1_loss(mel_pred * mask, mel_target * mask, reduction="sum") / (mask.sum() * n_mels)
 
             phon_mask = phon != 0
             log_dur_target = torch.log(dur.float() + 1)
@@ -110,8 +113,31 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--log_interval", type=int, default=10)
     ap.add_argument("--max_steps", type=int, default=0, help="Optional max steps to run")
+    ap.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint to resume weights from")
+    ap.add_argument("--resume", action="store_true", default=False, help="Resume from checkpoint if available")
+    ap.add_argument("--start_epoch", type=int, default=None, help="Explicit start epoch override")
     ap.add_argument("--out_dir", default="checkpoints/acoustic")
+    ap.add_argument("--log_file", type=str, default=None, help="Optional log file to append output to")
     args = ap.parse_args()
+
+    if args.log_file:
+        class TeeStream:
+            def __init__(self, target_stream, filepath):
+                self.target_stream = target_stream
+                self.file = open(filepath, "a", encoding="utf-8")
+
+            def write(self, data):
+                self.target_stream.write(data)
+                self.target_stream.flush()
+                self.file.write(data)
+                self.file.flush()
+
+            def flush(self):
+                self.target_stream.flush()
+                self.file.flush()
+
+        sys.stdout = TeeStream(sys.stdout, args.log_file)
+        sys.stderr = TeeStream(sys.stderr, args.log_file)
 
     os.makedirs(args.out_dir, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -129,10 +155,44 @@ def main():
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs * len(train_dl))
     writer = SummaryWriter(os.path.join(args.out_dir, "logs"))
 
+    start_epoch = 0
     best_val_loss = float("inf")
-    step = 0
 
-    for epoch in range(args.epochs):
+    if args.resume and not args.checkpoint:
+        latest_ckpt = os.path.join(args.out_dir, "latest_acoustic.pt")
+        best_ckpt = os.path.join(args.out_dir, "best_acoustic.pt")
+        if os.path.exists(latest_ckpt):
+            args.checkpoint = latest_ckpt
+        elif os.path.exists(best_ckpt):
+            args.checkpoint = best_ckpt
+
+    if args.checkpoint and os.path.exists(args.checkpoint):
+        ckpt = torch.load(args.checkpoint, map_location=device)
+        model.load_state_dict(ckpt["model"])
+        if "epoch" in ckpt:
+            start_epoch = ckpt["epoch"] + 1
+        if "val_loss" in ckpt:
+            best_val_loss = ckpt["val_loss"]
+            if best_val_loss > 50.0:  # Reset legacy unnormalized scale
+                best_val_loss = float("inf")
+        if "optimizer" in ckpt and ckpt["optimizer"]:
+            try:
+                opt.load_state_dict(ckpt["optimizer"])
+            except Exception as e:
+                print(f"Warning: Could not load optimizer state: {e}")
+        if "scheduler" in ckpt and ckpt["scheduler"]:
+            try:
+                sched.load_state_dict(ckpt["scheduler"])
+            except Exception as e:
+                print(f"Warning: Could not load scheduler state: {e}")
+        print(f"Loaded checkpoint from {args.checkpoint}: start_epoch={start_epoch}, best_val_loss={best_val_loss:.4f}")
+
+    if args.start_epoch is not None:
+        start_epoch = args.start_epoch
+
+    step = start_epoch * len(train_dl)
+
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         train_mel_total, train_dur_total = 0.0, 0.0
         steps_in_epoch = 0
@@ -144,12 +204,15 @@ def main():
             mel_pred, log_dur_pred, _ = model(phon, durations=dur, max_mel_len=mel_len)
 
             mask = mel_mask.unsqueeze(-1)
-            mel_loss = F.l1_loss(mel_pred * mask, mel_target * mask, reduction="sum") / mask.sum()
+            # Normalize by (frames * n_mels) for true per-element MAE
+            n_mels = mel_target.size(-1)
+            mel_loss = F.l1_loss(mel_pred * mask, mel_target * mask, reduction="sum") / (mask.sum() * n_mels)
 
             phon_mask = phon != 0
             log_dur_target = torch.log(dur.float() + 1)
             dur_loss = F.mse_loss(log_dur_pred * phon_mask, log_dur_target * phon_mask, reduction="sum") / phon_mask.sum()
 
+            # Both losses are now per-element: balance mel (dominant) vs duration
             loss = mel_loss + 0.1 * dur_loss
 
             opt.zero_grad()
@@ -191,6 +254,17 @@ def main():
             ckpt_path = os.path.join(args.out_dir, f"epoch_{epoch}.pt")
             torch.save({"model": model.state_dict(), "vocab": train_ds.vocab, "epoch": epoch}, ckpt_path)
             print(f"Saved checkpoint -> {ckpt_path}")
+
+        latest_ckpt = os.path.join(args.out_dir, "latest_acoustic.pt")
+        torch.save({
+            "model": model.state_dict(),
+            "vocab": train_ds.vocab,
+            "epoch": epoch,
+            "step": step,
+            "optimizer": opt.state_dict(),
+            "scheduler": sched.state_dict(),
+            "val_loss": best_val_loss,
+        }, latest_ckpt)
 
     best_ckpt = os.path.join(args.out_dir, "best_acoustic.pt")
     if not os.path.exists(best_ckpt):

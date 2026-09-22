@@ -16,7 +16,7 @@ import urllib.parse
 import numpy as np
 import onnxruntime as ort
 
-PORT = 8002
+PORT = 8000  # default; overridable via --port CLI argument
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 DATASET_DIR = os.path.join(BASE_DIR, "km_kh_male")
@@ -55,15 +55,20 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(content_len).decode("utf-8")
             try:
                 payload = json.loads(body) if body else {}
-                text = payload.get("text", "")
+                text = (payload.get("text") or "").strip()
                 speed = float(payload.get("speed", 1.0))
 
+                if not text:
+                    self.send_json_response({"error": "សូមបញ្ចូលអត្ថបទជាភាសាខ្មែរ (Please enter Khmer text)"}, status=400)
+                    return
+
+                vocoder_type = payload.get("vocoder", "griffin_lim")
                 global _pipeline
                 if _pipeline is None:
                     from infer import KhmerTTSPipeline
-                    _pipeline = KhmerTTSPipeline()
+                    _pipeline = KhmerTTSPipeline(vocoder_type=vocoder_type)
 
-                wav = _pipeline.synthesize(text, speed=speed)
+                wav = _pipeline.synthesize(text, speed=speed, vocoder=vocoder_type)
 
                 import io
                 import soundfile as sf
@@ -77,7 +82,9 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(wav_bytes)
             except Exception as e:
-                self.send_json_response({"error": str(e)}, status=500)
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({"error": f"Synthesis Error: {str(e)}"}, status=500)
             return
 
         self.send_error(404, "Endpoint not found")
@@ -210,13 +217,13 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def run_server():
-    server_address = ("", PORT)
+def run_server(port: int = PORT):
+    server_address = ("", port)
     with socketserver.TCPServer(server_address, TTSRequestHandler) as httpd:
         print(f"============================================================")
-        print(f" Mini TTS Web App Server running at: http://localhost:{PORT}")
+        print(f" Mini TTS Web App Server running at: http://localhost:{port}")
         print(f" Dataset Connected: {DATASET_DIR}")
-        print(f" Audio Endpoint: http://localhost:{PORT}/audio/<utt_id>.wav")
+        print(f" Audio Endpoint: http://localhost:{port}/audio/<utt_id>.wav")
         print(f"============================================================")
         try:
             httpd.serve_forever()
@@ -225,4 +232,8 @@ def run_server():
 
 
 if __name__ == "__main__":
-    run_server()
+    import argparse
+    ap = argparse.ArgumentParser(description="KHM-TTS Mini Studio local server")
+    ap.add_argument("--port", type=int, default=PORT, help="TCP port to listen on (default: 8000)")
+    args = ap.parse_args()
+    run_server(port=args.port)
