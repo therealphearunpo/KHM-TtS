@@ -7,17 +7,17 @@ Run with:
     python tests/test_pipeline.py
 
 Tests cover:
-  1.  Text normalization correctness
-  2.  Khmer tokenizer encode/decode
-  3.  Dataset loading and tensor shapes
-  4.  Audio loading helpers
-  5.  Model state-dict loading
-  6.  Acoustic model forward pass (train mode & inference mode)
-  7.  Vocoder forward pass
-  8.  End-to-end text-to-waveform inference
-  9.  ONNX acoustic & vocoder numerical consistency
-  10. API endpoint responses
-  11. Invalid input handling
+1.  Text normalization correctness
+2.  Khmer tokenizer encode/decode
+3.  Dataset loading and tensor shapes
+4.  Audio loading helpers
+5.  Model state-dict loading
+6.  Acoustic model forward pass (train mode & inference mode)
+7.  Vocoder forward pass
+8.  End-to-end text-to-waveform inference
+9.  ONNX acoustic & vocoder numerical consistency
+10. API endpoint responses
+11. Invalid input handling
 """
 
 import io
