@@ -18,7 +18,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except (ImportError, ModuleNotFoundError):
+    class SummaryWriter:
+        def __init__(self, *args, **kwargs): pass
+        def add_scalar(self, *args, **kwargs): pass
+        def close(self): pass
 import torchaudio.transforms as T
 
 from model.vocoder import Generator, Discriminator
@@ -130,6 +136,7 @@ def main():
     ap.add_argument("--batch_size", type=int, default=16)
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--log_interval", type=int, default=10)
+    ap.add_argument("--save_interval", type=int, default=20, help="Save checkpoint every N epochs")
     ap.add_argument("--max_steps", type=int, default=0, help="Optional max steps to run")
     ap.add_argument("--out_dir", default="checkpoints/vocoder")
     ap.add_argument("--resume", default="", help="Checkpoint path to resume from")
@@ -226,7 +233,7 @@ def main():
             writer.add_scalar("val/mel_recon_loss", val_loss, epoch)
             print(f"--- Epoch {epoch:03d} Val mel loss: {val_loss:.4f} ---")
 
-        if epoch % 20 == 0 or epoch == args.epochs - 1:
+        if epoch % args.save_interval == 0 or epoch == args.epochs - 1:
             ckpt_path = os.path.join(args.out_dir, f"epoch_{epoch}.pt")
             torch.save({
                 "gen": gen.state_dict(),

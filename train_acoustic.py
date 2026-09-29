@@ -18,7 +18,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except (ImportError, ModuleNotFoundError):
+    class SummaryWriter:
+        def __init__(self, *args, **kwargs): pass
+        def add_scalar(self, *args, **kwargs): pass
+        def close(self): pass
 
 from model.acoustic_model import FastSpeechLite
 
@@ -146,6 +152,7 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--warmup_steps", type=int, default=500)
     ap.add_argument("--log_interval", type=int, default=10)
+    ap.add_argument("--save_interval", type=int, default=10, help="Save checkpoint every N epochs")
     ap.add_argument("--max_steps", type=int, default=0, help="Optional max steps to run")
     ap.add_argument("--out_dir", default="checkpoints/acoustic")
     ap.add_argument("--resume", default="", help="Checkpoint to resume from")
@@ -255,7 +262,7 @@ def main():
                 }, best_ckpt)
                 print(f"Saved new best model -> {best_ckpt}")
 
-        if epoch % 10 == 0 or epoch == args.epochs - 1:
+        if epoch % args.save_interval == 0 or epoch == args.epochs - 1:
             ckpt_path = os.path.join(args.out_dir, f"epoch_{epoch}.pt")
             torch.save({
                 "model": model.state_dict(),
