@@ -15,6 +15,7 @@ import os
 import re
 import socketserver
 import urllib.parse
+import urllib.request
 
 PORT = 8000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -113,6 +114,42 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 })
             except Exception as e:
                 self.send_json_response({"error": str(e)}, status=500)
+            return
+
+        # 3. API: Translate text to Khmer
+        if parsed.path == "/api/translate":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
+            try:
+                payload = json.loads(body) if body else {}
+                text = payload.get("text", "").strip()
+                if not text:
+                    self.send_json_response({"error": "Empty text provided"}, status=400)
+                    return
+
+                target_lang = payload.get("target", "km")
+                source_lang = payload.get("source", "auto")
+                api_url = (
+                    "https://translate.googleapis.com/translate_a/single?client=gtx"
+                    f"&sl={source_lang}&tl={target_lang}&dt=t&q="
+                    + urllib.parse.quote(text)
+                )
+                req = urllib.request.Request(
+                    api_url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    translated_segments = [s[0] for s in resp_data[0] if s and s[0]]
+                    translated = "".join(translated_segments)
+
+                self.send_json_response({
+                    "original": text,
+                    "translated": translated,
+                    "target_lang": target_lang
+                })
+            except Exception as e:
+                self.send_json_response({"error": f"Translation failed: {str(e)}"}, status=500)
             return
 
         self.send_error(404, "Endpoint not found")

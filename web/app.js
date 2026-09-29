@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const normalizedDisplay = document.getElementById('normalized-text-display');
   const tokenChipsContainer = document.getElementById('token-chips-container');
   const tokenCountBadge = document.getElementById('token-count-badge');
+  const btnTranslateKm = document.getElementById('btn-translate-km');
+  const btnClearText = document.getElementById('btn-clear-text');
   const statusBadge = document.getElementById('system-status');
   const statusLabel = document.getElementById('status-label');
 
@@ -92,6 +94,76 @@ document.addEventListener('DOMContentLoaded', () => {
       textInput.focus();
     });
   });
+
+  // Translate text to Khmer
+  if (btnTranslateKm) {
+    btnTranslateKm.addEventListener('click', async () => {
+      const text = textInput.value.trim();
+      if (!text) {
+        alert('សូមវាយបញ្ចូល ឬបិទភ្ជាប់អត្ថបទដែលចង់បកប្រែជាមុនសិន។');
+        textInput.focus();
+        return;
+      }
+
+      const origBtnHtml = btnTranslateKm.innerHTML;
+      btnTranslateKm.disabled = true;
+      btnTranslateKm.innerHTML = `
+        <svg class="spin-animation" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        <span>កំពុងបកប្រែ...</span>
+      `;
+
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, target: 'km', source: 'auto' })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP error ${res.status}`);
+        }
+        const data = await res.json();
+        if (data.translated) {
+          textInput.value = data.translated;
+          updateCharCount();
+          runTokenizePreview();
+        }
+      } catch (err) {
+        console.warn('Server translate failed, trying direct client fallback:', err);
+        try {
+          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=km&dt=t&q=${encodeURIComponent(text)}`;
+          const fallbackRes = await fetch(url);
+          const fallbackData = await fallbackRes.json();
+          const translated = (fallbackData[0] || []).map(s => s[0]).join('');
+          if (translated) {
+            textInput.value = translated;
+            updateCharCount();
+            runTokenizePreview();
+          } else {
+            throw new Error('No translation returned');
+          }
+        } catch (fbErr) {
+          alert(`Translation error: ${err.message || fbErr.message}`);
+        }
+      } finally {
+        btnTranslateKm.disabled = false;
+        btnTranslateKm.innerHTML = origBtnHtml;
+      }
+    });
+  }
+
+  // Clear text
+  if (btnClearText) {
+    btnClearText.addEventListener('click', () => {
+      textInput.value = '';
+      updateCharCount();
+      runTokenizePreview();
+      textInput.focus();
+    });
+  }
 
   async function runTokenizePreview() {
     const text = textInput.value.trim();

@@ -101,15 +101,36 @@
               <button class="preset-chip" data-text="ភ្លើង កំពុង ឆាប ឆេះ ផ្ទះ ប្រជា ពលរដ្ឋ នៅ សង្កាត់ ឫស្សីកែវ។">ភ្លើងឆេះផ្ទះ</button>
               <button class="preset-chip" data-text="កំពត និង កែប គឺ ជា ទឹកដី មួយ ដែល ជាប់ នឹង សមុទ្រ ស្រស់ស្អាត។">កំពត និង កែប</button>
               <button class="preset-chip" data-text="សូមស្វាគមន៍មកកាន់ប្រព័ន្ធសំយោគសំឡេងខ្មែរឆ្លាតវៃ ឆ្នាំ ២០២៦ ដើរលឿនៗ។">ស្វាគមន៍ (លេខ+ៗ)</button>
+              <button class="preset-chip preset-chip-en" data-text="Hello and welcome to Cambodia! Artificial Intelligence speech synthesis is amazing.">English Sample (សម្រាប់បកប្រែ)</button>
             </div>
 
             <div class="textarea-wrapper">
               <textarea
                 id="khmer-text-input"
                 class="khmer-textarea"
-                placeholder="សូមវាយបញ្ចូល ឬបិទភ្ជាប់អត្ថបទខ្មែរនៅទីនេះ..."
+                placeholder="សូមវាយបញ្ចូល ឬបិទភ្ជាប់អត្ថបទ (ខ្មែរ ឬ អង់គ្លេស)..."
                 rows="5"
               >ស្ពាន កំពង់ ចម្លង អ្នកលឿង នៅ ព្រៃវែង ជា ស្ពាន វែង ជាង គេ ក្នុង ព្រះ រាជាណាចក្រ កម្ពុជា។</textarea>
+              <div class="textarea-toolbar">
+                <button id="btn-translate-km" class="btn-translate" type="button" title="Translate text to Khmer">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m5 8 6 6"></path>
+                    <path d="m4 14 6-6 2-3"></path>
+                    <path d="M2 5h12"></path>
+                    <path d="M7 2h1"></path>
+                    <path d="m22 22-5-10-5 10"></path>
+                    <path d="M14 18h6"></path>
+                  </svg>
+                  <span>Translate to Khmer (បកប្រែជាភាសាខ្មែរ)</span>
+                </button>
+                <button id="btn-clear-text" class="btn-clear" type="button" title="Clear text input">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                  <span>សម្អាត</span>
+                </button>
+              </div>
             </div>
 
             <!-- Controls -->
