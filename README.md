@@ -1,5 +1,7 @@
 # KHM-TtS: Khmer Neural Text-to-Speech Studio & Pipeline
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/therealphearunpo/KHM-TtS/blob/main/train_colab.ipynb)
+
 A lightweight, non-autoregressive Khmer Text-to-Speech (TTS) pipeline designed for fast local GPU training and low-latency client-side Web deployment (ONNX Runtime Web / WebGPU).
 
 ---
