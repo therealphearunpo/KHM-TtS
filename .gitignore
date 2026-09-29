@@ -8,7 +8,12 @@ __pycache__/
 *.wav
 eval_results/
 
-# Training outputs and datasets
+# Training outputs, processed audio/mels and datasets
 checkpoints/
 km_kh_male/wavs/
 km_kh_male/processed/
+processed/
+*.zip
+*.tar.gz
+*.pt
+web/models/*.onnx

@@ -1,6 +1,7 @@
 """
 Khmer Tokenizer for TTS:
 Maps normalized Khmer text into token sequences and token IDs.
+Supports character/grapheme tokens and pause tokens.
 """
 import json
 import os
@@ -14,11 +15,33 @@ class KhmerTokenizer:
 
         if vocab is not None:
             self.vocab = vocab
-        elif vocab_path is not None and os.path.exists(vocab_path):
-            with open(vocab_path, encoding="utf-8") as f:
-                self.vocab = json.load(f)
         else:
-            self.vocab = {"<pad>": 0, "<unk>": 1, "<space>": 2, ",": 3, ".": 4, "?": 5, "!": 6}
+            resolved_path = None
+            if vocab_path and os.path.exists(vocab_path):
+                resolved_path = vocab_path
+            else:
+                for candidate in (
+                    "web/models/vocab.json",
+                    "processed/vocab.json",
+                    "km_kh_male/processed/vocab.json",
+                ):
+                    if os.path.exists(candidate):
+                        resolved_path = candidate
+                        break
+
+            if resolved_path and os.path.exists(resolved_path):
+                with open(resolved_path, encoding="utf-8") as f:
+                    self.vocab = json.load(f)
+            else:
+                self.vocab = {
+                    "<pad>": 0,
+                    "<unk>": 1,
+                    "<space>": 2,
+                    ",": 3,
+                    ".": 4,
+                    "?": 5,
+                    "!": 6,
+                }
 
         self.id_to_token = {v: k for k, v in self.vocab.items()}
 
@@ -28,14 +51,16 @@ class KhmerTokenizer:
         words = text.split()
         tokens = []
 
+        pause_puncts = {",", ".", "?", "!", ":"}
+
         for i, word in enumerate(words):
-            if word in (",", ".", "?", "!", ":"):
+            if word in pause_puncts:
                 tokens.append(word)
             else:
                 for ch in word:
                     tokens.append(ch)
 
-            if i < len(words) - 1 and word not in (",", ".", "?", "!", ":") and words[i + 1] not in (",", ".", "?", "!", ":"):
+            if i < len(words) - 1 and word not in pause_puncts and words[i + 1] not in pause_puncts:
                 tokens.append("<space>")
 
         return tokens
@@ -43,7 +68,8 @@ class KhmerTokenizer:
     def text_to_ids(self, text: str) -> List[int]:
         """Convert raw Khmer text directly into integer token IDs."""
         tokens = self.tokenize(text)
-        return [self.vocab.get(t, self.vocab.get("<unk>", 1)) for t in tokens]
+        unk_id = self.vocab.get("<unk>", 1)
+        return [self.vocab.get(t, unk_id) for t in tokens]
 
     def encode(self, text: str) -> List[int]:
         """Standard alias for text_to_ids."""
@@ -76,7 +102,9 @@ class KhmerTokenizer:
 
     def save_vocab(self, path: str):
         """Save vocabulary to JSON file."""
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.vocab, f, ensure_ascii=False, indent=2)
 
@@ -84,7 +112,6 @@ class KhmerTokenizer:
 if __name__ == "__main__":
     tokenizer = KhmerTokenizer()
     sample = "ស្ពាន កំពង់ ចម្លង អ្នកលឿង"
-    tokenizer.build_vocab_from_texts([sample])
     tokens = tokenizer.tokenize(sample)
     ids = tokenizer.text_to_ids(sample)
     print("Tokens:", tokens)

@@ -106,6 +106,8 @@ def main():
 
         # Mel L1 & MCD
         min_len = min(pred_mel_np.shape[0], target_mel.shape[0])
+        if min_len == 0:
+            continue
         l1 = np.mean(np.abs(pred_mel_np[:min_len] - target_mel[:min_len]))
         mcd = compute_mcd(pred_mel_np, target_mel)
         mel_l1_errors.append(l1)
@@ -122,6 +124,9 @@ def main():
     print("           Khmer TTS Evaluation Summary           ")
     print("==================================================")
     print(f"Total Test Utterances: {len(mel_l1_errors)}")
+    if not mel_l1_errors:
+        print("No valid test utterances were evaluated.")
+        return
     print(f"Average Mel L1 Error: {np.mean(mel_l1_errors):.4f}")
     print(f"Average MCD Distortion: {np.mean(mcd_scores):.2f} dB")
     print(f"Average Real-Time Factor (RTF): {np.mean(rtf_scores):.4f}x (Lower is faster)")

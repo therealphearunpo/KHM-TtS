@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="KHM-TtS: Modern Khmer Text-to-Speech Studio & Dataset Explorer powered by FastSpeechLite and HiFiGAN.">
+  <title>KHM-TtS - Khmer Text-to-Speech Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Background Glow Accents -->
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+  <div class="bg-glow bg-glow-3"></div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v20M17 5v14M7 8v8M2 11v2M22 10v4" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>KHM-TtS <span class="badge-tag">Studio</span></h1>
+          <p class="subtitle">Khmer Neural Text-to-Speech & Dataset Explorer</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs" role="tablist">
+        <button class="nav-tab active" id="tab-btn-synthesizer" role="tab" aria-selected="true" data-tab="synthesizer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          Speech Synthesizer
+        </button>
+        <button class="nav-tab" id="tab-btn-dataset" role="tab" aria-selected="false" data-tab="dataset">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+          Dataset Explorer
+        </button>
+        <button class="nav-tab" id="tab-btn-pipeline" role="tab" aria-selected="false" data-tab="pipeline">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          Architecture & Training
+        </button>
+      </nav>
+
+      <!-- System Status -->
+      <div class="system-status" id="system-status">
+        <span class="status-dot"></span>
+        <span class="status-label" id="status-label">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="app-main">
+      <!-- TAB 1: SYNTHESIZER -->
+      <section class="tab-content active" id="tab-synthesizer">
+        <div class="studio-grid">
+          <!-- Left Column: Input Card -->
+          <div class="card glass-card input-card">
+            <div class="card-header">
+              <div class="header-title">
+                <h2>Khmer Text Input</h2>
+                <span class="hint">បញ្ចូលអត្ថបទជាភាសាខ្មែរ</span>
+              </div>
+              <span class="char-count" id="char-counter">0 តួអក្សរ</span>
+            </div>
+
+            <!-- Quick Presets -->
+            <div class="presets-bar">
+              <span class="presets-label">គំរូអត្ថបទ៖</span>
+              <button class="preset-chip" data-text="ស្ពាន កំពង់ ចម្លង អ្នកលឿង នៅ ព្រៃវែង ជា ស្ពាន វែង ជាង គេ ក្នុង ព្រះ រាជាណាចក្រ កម្ពុជា។">ស្ពានអ្នកលឿង</button>
+              <button class="preset-chip" data-text="ភ្លើង កំពុង ឆាប ឆេះ ផ្ទះ ប្រជា ពលរដ្ឋ នៅ សង្កាត់ ឫស្សីកែវ។">ភ្លើងឆេះផ្ទះ</button>
+              <button class="preset-chip" data-text="កំពត និង កែប គឺ ជា ទឹកដី មួយ ដែល ជាប់ នឹង សមុទ្រ ស្រស់ស្អាត។">កំពត និង កែប</button>
+              <button class="preset-chip" data-text="សូមស្វាគមន៍មកកាន់ប្រព័ន្ធសំយោគសំឡេងខ្មែរឆ្លាតវៃ ឆ្នាំ ២០២៦ ដើរលឿនៗ។">ស្វាគមន៍ (លេខ+ៗ)</button>
+            </div>
+
+            <div class="textarea-wrapper">
+              <textarea
+                id="khmer-text-input"
+                class="khmer-textarea"
+                placeholder="សូមវាយបញ្ចូល ឬបិទភ្ជាប់អត្ថបទខ្មែរនៅទីនេះ..."
+                rows="5"
+              >ស្ពាន កំពង់ ចម្លង អ្នកលឿង នៅ ព្រៃវែង ជា ស្ពាន វែង ជាង គេ ក្នុង ព្រះ រាជាណាចក្រ កម្ពុជា។</textarea>
+            </div>
+
+            <!-- Controls -->
+            <div class="controls-row">
+              <div class="control-item">
+                <div class="control-label-row">
+                  <label for="speed-slider">Speech Speed (ល្បឿននិយាយ):</label>
+                  <span class="control-val" id="speed-val">1.00x</span>
+                </div>
+                <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.05" value="1.0">
+              </div>
+
+              <div class="control-item">
+                <div class="control-label-row">
+                  <label for="engine-mode">Synthesizer Engine:</label>
+                </div>
+                <select id="engine-mode" class="styled-select">
+                  <option value="server">Server (FastSpeechLite + HiFiGAN)</option>
+                  <option value="browser" disabled>Browser ONNX Web (Export first)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Action Button -->
+            <button id="btn-synthesize" class="btn btn-primary btn-glow">
+              <span class="btn-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </span>
+              <span class="btn-text">Generate Speech (សំយោគសំឡេង)</span>
+            </button>
+          </div>
+
+          <!-- Right Column: Audio & Breakdown -->
+          <div class="studio-sidebar">
+            <!-- Audio Player Card -->
+            <div class="card glass-card audio-result-card" id="audio-result-card">
+              <div class="card-header">
+                <h2>Generated Audio Output</h2>
+                <span class="badge" id="audio-duration-badge">0.00s</span>
+              </div>
+
+              <div class="audio-player-container">
+                <audio id="tts-audio-element" controls preload="none"></audio>
+                <div class="audio-actions">
+                  <a id="btn-download-wav" class="btn btn-secondary btn-sm" download="khmer_tts_speech.wav">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download WAV
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tokenizer Inspector Card -->
+            <div class="card glass-card token-card">
+              <div class="card-header">
+                <h2>Grapheme Tokenizer Inspector</h2>
+                <span class="badge badge-accent" id="token-count-badge">0 tokens</span>
+              </div>
+              <p class="card-desc">បង្ហាញពីរបៀបដែល Tokenizer បំប្លែងអត្ថបទទៅជា Token IDs និងស្រង់លេខទោ/លេខខ្មែរ៖</p>
+
+              <div class="token-normalized-box">
+                <span class="sub-label">Normalized Speech Text:</span>
+                <p id="normalized-text-display" class="normalized-text">—</p>
+              </div>
+
+              <div class="token-chips-container" id="token-chips-container">
+                <span class="token-chip-placeholder">វាយអត្ថបទដើម្បីពិនិត្យ Token breakdown...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: DATASET EXPLORER -->
+      <section class="tab-content" id="tab-dataset">
+        <div class="dataset-layout">
+          <!-- Overview Stats Cards -->
+          <div class="stats-grid">
+            <div class="stat-card glass-card">
+              <div class="stat-icon">🎙️</div>
+              <div class="stat-body">
+                <span class="stat-num" id="stat-total-wavs">2,906</span>
+                <span class="stat-label">Audio Utterances</span>
+              </div>
+            </div>
+            <div class="stat-card glass-card">
+              <div class="stat-icon">🔤</div>
+              <div class="stat-body">
+                <span class="stat-num" id="stat-vocab-size">77</span>
+                <span class="stat-label">Vocabulary Tokens</span>
+              </div>
+            </div>
+            <div class="stat-card glass-card">
+              <div class="stat-icon">📖</div>
+              <div class="stat-body">
+                <span class="stat-num" id="stat-lexicon-words">4,347</span>
+                <span class="stat-label">Lexicon Entries</span>
+              </div>
+            </div>
+            <div class="stat-card glass-card">
+              <div class="stat-icon">⚡</div>
+              <div class="stat-body">
+                <span class="stat-num">22.05 kHz</span>
+                <span class="stat-label">Model Sample Rate</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dataset Search & Table -->
+          <div class="card glass-card table-card">
+            <div class="table-toolbar">
+              <div class="search-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="dataset-search-input" placeholder="ស្វែងរកតាមពាក្យ ឬ Utterance ID (e.g. khm_0308)...">
+              </div>
+
+              <div class="pagination-controls">
+                <button id="btn-page-prev" class="btn btn-secondary btn-sm" disabled>&larr; មុន</button>
+                <span class="page-indicator" id="page-indicator">ទំព័រ 1 / 146</span>
+                <button id="btn-page-next" class="btn btn-secondary btn-sm">បន្ទាប់ &rarr;</button>
+              </div>
+            </div>
+
+            <!-- Samples Table -->
+            <div class="table-responsive">
+              <table class="data-table" id="dataset-samples-table">
+                <thead>
+                  <tr>
+                    <th style="width: 220px;">Utterance ID</th>
+                    <th>Transcript Text (អត្ថបទ)</th>
+                    <th style="width: 140px; text-align: center;">Audio</th>
+                    <th style="width: 140px; text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="dataset-table-body">
+                  <tr>
+                    <td colspan="4" class="table-loading">កំពុងផ្ទុកទិន្នន័យ...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: PIPELINE & ARCHITECTURE -->
+      <section class="tab-content" id="tab-pipeline">
+        <div class="pipeline-grid">
+          <!-- Architecture Card -->
+          <div class="card glass-card">
+            <h2>Two-Stage Non-Autoregressive TTS Architecture</h2>
+            <p class="card-desc">រចនាសម្ព័ន្ធម៉ូដែល 2 ដំណាក់កាល រចនាឡើងដើម្បី Train បានលឿនលើ Single GPU និង Export ទៅ Web ONNX Runtime បានដោយរលូន៖</p>
+
+            <div class="arch-diagram">
+              <div class="arch-box text-box">
+                <span class="arch-tag">Input</span>
+                <strong>Khmer Text / Tokens</strong>
+                <span class="dim">Shape: (B, L)</span>
+              </div>
+              <div class="arch-arrow">&darr;</div>
+              <div class="arch-box model-box">
+                <span class="arch-tag">Stage 1</span>
+                <strong>FastSpeechLite (Acoustic Model)</strong>
+                <div class="sub-steps">
+                  <span>Transformer Encoder</span> &rarr;
+                  <span>Energy Duration Predictor</span> &rarr;
+                  <span>Vectorized Length Regulator</span> &rarr;
+                  <span>Transformer Decoder</span>
+                </div>
+                <span class="dim">~4.0M Parameters</span>
+              </div>
+              <div class="arch-arrow">&darr;</div>
+              <div class="arch-box mel-box">
+                <span class="arch-tag">Intermediate</span>
+                <strong>Mel-Spectrogram</strong>
+                <span class="dim">Shape: (B, 80, T_mel)</span>
+              </div>
+              <div class="arch-arrow">&darr;</div>
+              <div class="arch-box model-box vocoder-box">
+                <span class="arch-tag">Stage 2</span>
+                <strong>HiFiGAN-tiny (Neural Vocoder)</strong>
+                <div class="sub-steps">
+                  <span>ConvTranspose1d Upsampling (x256)</span> &rarr;
+                  <span>Multi-Receptive Field (MRF) ResBlocks</span>
+                </div>
+                <span class="dim">~1.5M Parameters</span>
+              </div>
+              <div class="arch-arrow">&darr;</div>
+              <div class="arch-box audio-box">
+                <span class="arch-tag">Output</span>
+                <strong>22,050 Hz Mono Audio Waveform</strong>
+                <span class="dim">Direct playback in browser</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Training Workflow Card -->
+          <div class="card glass-card">
+            <h2>Step-by-Step Training Guide</h2>
+            <p class="card-desc">លំដាប់លំដោយនៃការដំណើរការ Dataset Preprocessing និង Train គំរូសំឡេង៖</p>
+
+            <div class="workflow-steps">
+              <div class="step-item">
+                <span class="step-num">1</span>
+                <div class="step-content">
+                  <strong>Preprocess Dataset (Resample 22k + Compute Mels)</strong>
+                  <code>python data/prepare_dataset.py --data_dir km_kh_male --out_dir processed</code>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-num">2</span>
+                <div class="step-content">
+                  <strong>Extract Acoustic Energy-Guided Durations</strong>
+                  <code>python data/extract_durations.py --data_dir km_kh_male --proc_dir processed</code>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-num">3</span>
+                <div class="step-content">
+                  <strong>Train FastSpeechLite (Acoustic Model)</strong>
+                  <code>python train_acoustic.py --data_dir km_kh_male --epochs 100 --batch_size 16</code>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-num">4</span>
+                <div class="step-content">
+                  <strong>Train HiFiGAN-tiny (Vocoder)</strong>
+                  <code>python train_vocoder.py --data_dir km_kh_male --epochs 200 --batch_size 16</code>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-num">5</span>
+                <div class="step-content">
+                  <strong>Export to ONNX for Web Runtime</strong>
+                  <code>python export_onnx.py --out_dir web/models</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>KHM-TtS &copy; 2026 &bull; Mini Text-to-Speech Architecture &bull; Dataset: OpenSLR 42 (km_kh_male)</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

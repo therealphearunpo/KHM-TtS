@@ -1,10 +1,12 @@
 """
-Local server for Mini TTS Web App.
+Local Studio & Dataset Server for KHM-TtS (Khmer Text-to-Speech).
 Serves:
-- Web App UI & static assets from web/
-- Dataset audio wav files from km_kh_male/wavs/ at /audio/<id>.wav
-- Dataset samples API at /api/samples
-- Dataset stats API at /api/stats
+- Web App UI & static assets from web/ (index.html, style.css, app.js)
+- Dataset audio wav files from km_kh_male/wavs/ or processed/wavs_22k/ at /audio/<id>.wav
+- Dataset samples API at /api/samples (with live search & pagination)
+- Dataset statistics API at /api/stats
+- Live Tokenizer Breakdown API at /api/tokenize
+- Audio Synthesis API at /api/synthesize
 - ONNX models and JSON dictionaries from web/models/
 """
 import http.server
@@ -13,22 +15,27 @@ import os
 import re
 import socketserver
 import urllib.parse
-import numpy as np
-import onnxruntime as ort
 
-PORT = 8002
+PORT = 8000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 DATASET_DIR = os.path.join(BASE_DIR, "km_kh_male")
 WAVS_DIR = os.path.join(DATASET_DIR, "wavs")
+PROCESSED_WAVS_DIR = os.path.join(BASE_DIR, "processed", "wavs_22k")
 SAMPLES_JSON = os.path.join(WEB_DIR, "data", "samples.json")
 VOCAB_JSON = os.path.join(WEB_DIR, "models", "vocab.json")
 LEXICON_JSON = os.path.join(WEB_DIR, "models", "lexicon.json")
 
-
 _pipeline = None
-_acoustic_ort = None
-_vocoder_ort = None
+_tokenizer = None
+
+
+def get_tokenizer():
+    global _tokenizer
+    if _tokenizer is None:
+        from data.khmer_tokenizer import KhmerTokenizer
+        _tokenizer = KhmerTokenizer(vocab_path=VOCAB_JSON)
+    return _tokenizer
 
 
 class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -36,7 +43,7 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=WEB_DIR, **kwargs)
 
     def end_headers(self):
-        # Enable CORS and SharedArrayBuffer headers needed for multi-threaded WASM / WebGPU
+        # Enable CORS and SharedArrayBuffer headers needed for WebGPU / multi-threaded WASM
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
@@ -50,18 +57,24 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+
+        # 1. API: Synthesize text -> WAV
         if parsed.path == "/api/synthesize":
             content_len = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_len).decode("utf-8")
+            body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
             try:
                 payload = json.loads(body) if body else {}
-                text = payload.get("text", "")
+                text = payload.get("text", "").strip()
                 speed = float(payload.get("speed", 1.0))
+
+                if not text:
+                    self.send_json_response({"error": "Empty text provided"}, status=400)
+                    return
 
                 global _pipeline
                 if _pipeline is None:
                     from infer import KhmerTTSPipeline
-                    _pipeline = KhmerTTSPipeline()
+                    _pipeline = KhmerTTSPipeline(vocab_path=VOCAB_JSON)
 
                 wav = _pipeline.synthesize(text, speed=speed)
 
@@ -76,6 +89,28 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(wav_bytes)))
                 self.end_headers()
                 self.wfile.write(wav_bytes)
+            except Exception as e:
+                self.send_json_response({"error": str(e)}, status=500)
+            return
+
+        # 2. API: Tokenize text
+        if parsed.path == "/api/tokenize":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
+            try:
+                payload = json.loads(body) if body else {}
+                text = payload.get("text", "").strip()
+                tok = get_tokenizer()
+                normalized = tok.normalizer.normalize(text)
+                tokens = tok.tokenize(text)
+                ids = tok.text_to_ids(text)
+                self.send_json_response({
+                    "original": text,
+                    "normalized": normalized,
+                    "tokens": tokens,
+                    "token_ids": ids,
+                    "length": len(tokens)
+                })
             except Exception as e:
                 self.send_json_response({"error": str(e)}, status=500)
             return
@@ -100,9 +135,12 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
         # 3. Audio Streaming: /audio/<filename>
         if path.startswith("/audio/"):
             wav_name = os.path.basename(path)
-            wav_path = os.path.join(WAVS_DIR, wav_name)
             if not wav_name.endswith(".wav"):
-                wav_path += ".wav"
+                wav_name += ".wav"
+
+            wav_path = os.path.join(WAVS_DIR, wav_name)
+            if not os.path.exists(wav_path):
+                wav_path = os.path.join(PROCESSED_WAVS_DIR, wav_name)
 
             if os.path.exists(wav_path):
                 self.serve_audio_file(wav_path)
@@ -110,19 +148,27 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, f"Audio file not found: {wav_name}")
             return
 
-        # Default: Serve web/ directory
+        # Default: Serve static files from web/
         super().do_GET()
 
     def handle_api_stats(self):
+        total_wavs = 0
+        if os.path.exists(WAVS_DIR):
+            total_wavs = sum(1 for name in os.listdir(WAVS_DIR) if name.lower().endswith(".wav"))
+        elif os.path.exists(PROCESSED_WAVS_DIR):
+            total_wavs = sum(1 for name in os.listdir(PROCESSED_WAVS_DIR) if name.lower().endswith(".wav"))
+
         stats = {
             "dataset_name": "Khmer Male Speech (km_kh_male)",
-            "total_wavs": len(os.listdir(WAVS_DIR)) if os.path.exists(WAVS_DIR) else 0,
+            "total_wavs": total_wavs,
             "sample_rate": 48000,
             "target_rate": 22050,
-            "language": "Khmer (km)",
+            "language": "Khmer (km-KH)",
             "models": {
                 "acoustic_onnx": os.path.exists(os.path.join(WEB_DIR, "models", "acoustic.onnx")),
                 "vocoder_onnx": os.path.exists(os.path.join(WEB_DIR, "models", "vocoder.onnx")),
+                "acoustic_ckpt": os.path.exists(os.path.join(BASE_DIR, "checkpoints", "acoustic", "best_acoustic.pt")),
+                "vocoder_ckpt": os.path.exists(os.path.join(BASE_DIR, "checkpoints", "vocoder", "best_vocoder.pt")),
                 "vocab_json": os.path.exists(VOCAB_JSON),
                 "lexicon_json": os.path.exists(LEXICON_JSON),
             }
@@ -141,12 +187,18 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
         page = int(query.get("page", ["1"])[0])
         limit = int(query.get("limit", ["20"])[0])
 
-        if not os.path.exists(SAMPLES_JSON):
-            self.send_json_response({"samples": [], "total": 0, "page": page, "limit": limit})
-            return
-
-        with open(SAMPLES_JSON, encoding="utf-8") as f:
-            all_samples = json.load(f)
+        all_samples = []
+        if os.path.exists(SAMPLES_JSON):
+            with open(SAMPLES_JSON, encoding="utf-8") as f:
+                all_samples = json.load(f)
+        else:
+            meta_csv = os.path.join(DATASET_DIR, "metadata.csv")
+            if os.path.exists(meta_csv):
+                with open(meta_csv, encoding="utf-8") as f:
+                    for line in f:
+                        parts = line.strip().split("|", 1)
+                        if len(parts) == 2:
+                            all_samples.append({"id": parts[0].strip(), "text": parts[1].strip()})
 
         if q:
             filtered = [s for s in all_samples if q in s["text"].lower() or q in s["id"].lower()]
@@ -170,7 +222,6 @@ class TTSRequestHandler(http.server.SimpleHTTPRequestHandler):
             range_header = self.headers.get("Range")
 
             if range_header:
-                # Handle Byte-Range requests for seamless audio seeking
                 range_match = re.match(r"bytes=(\d+)-(\d*)", range_header)
                 if range_match:
                     start = int(range_match.group(1))
@@ -214,14 +265,14 @@ def run_server():
     server_address = ("", PORT)
     with socketserver.TCPServer(server_address, TTSRequestHandler) as httpd:
         print(f"============================================================")
-        print(f" Mini TTS Web App Server running at: http://localhost:{PORT}")
-        print(f" Dataset Connected: {DATASET_DIR}")
-        print(f" Audio Endpoint: http://localhost:{PORT}/audio/<utt_id>.wav")
+        print(f" KHM-TtS Web Studio & Dataset Explorer")
+        print(f" Running at: http://localhost:{PORT}")
+        print(f" Web UI: {WEB_DIR}")
         print(f"============================================================")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\nServer stopped.")
+            print("\nShutting down server.")
 
 
 if __name__ == "__main__":

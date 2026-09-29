@@ -35,9 +35,19 @@ class KhmerTTSPipeline:
         self.acoustic = FastSpeechLite(vocab_size=vocab_size).to(self.device)
         if os.path.exists(acoustic_ckpt):
             ckpt = torch.load(acoustic_ckpt, map_location=self.device)
-            # Load with strict=False to allow vocab size differences
-            self.acoustic.load_state_dict(ckpt["model"], strict=False)
-            print(f"Loaded acoustic checkpoint (strict=False): {acoustic_ckpt}")
+            checkpoint_vocab = ckpt.get("vocab")
+            if checkpoint_vocab is not None and checkpoint_vocab != self.tokenizer.vocab:
+                raise ValueError(
+                    "Tokenizer vocabulary does not match the acoustic checkpoint. "
+                    "Use the checkpoint's vocab.json/processed dataset."
+                )
+            try:
+                self.acoustic.load_state_dict(ckpt["model"], strict=True)
+            except RuntimeError as exc:
+                raise ValueError(
+                    "Acoustic checkpoint is incompatible with the loaded vocabulary/model."
+                ) from exc
+            print(f"Loaded acoustic checkpoint: {acoustic_ckpt}")
         else:
             print(f"Warning: Acoustic checkpoint {acoustic_ckpt} not found. Using initialized weights.")
         self.acoustic.eval()
@@ -46,10 +56,12 @@ class KhmerTTSPipeline:
         self.vocoder = Generator().to(self.device)
         if os.path.exists(vocoder_ckpt):
             ckpt = torch.load(vocoder_ckpt, map_location=self.device)
-            # Load vocoder checkpoint with strict=False as well
-            self.vocoder.load_state_dict(ckpt["gen"], strict=False)
+            try:
+                self.vocoder.load_state_dict(ckpt["gen"], strict=True)
+            except RuntimeError as exc:
+                raise ValueError("Vocoder checkpoint is incompatible with this model.") from exc
             self.vocoder.remove_weight_norm()
-            print(f"Loaded vocoder checkpoint (strict=False): {vocoder_ckpt}")
+            print(f"Loaded vocoder checkpoint: {vocoder_ckpt}")
         else:
             print(f"Warning: Vocoder checkpoint {vocoder_ckpt} not found. Using initialized weights.")
         self.vocoder.eval()
@@ -64,7 +76,9 @@ class KhmerTTSPipeline:
 
         with torch.no_grad():
             # Acoustic model forward pass (text -> mel)
-            mel_pred, log_dur_pred, out_lens = self.acoustic(phon_tensor)
+            if speed <= 0:
+                raise ValueError("speed must be greater than zero")
+            mel_pred, log_dur_pred, out_lens = self.acoustic(phon_tensor, speed=speed)
             
             # Mel shape: (1, T_mel, 80) -> Vocoder expects (1, 80, T_mel)
             mel_len = int(out_lens[0].item())

@@ -3,11 +3,12 @@ Khmer Text Normalizer for Text-to-Speech (TTS).
 Handles:
 1. Khmer numeral expansion (e.g. ០-៩, compound numbers up to billions)
 2. Arabic numeral expansion to Khmer words
-3. Zero-width space & joiner normalization (\\u200b, \\u200c, \\u200d)
-4. Khmer punctuation normalization (។, ៕, ៚, ៙, etc.)
-5. Sub-consonant (Coeng ្) and diacritic standard ordering
+3. Khmer repetition mark (Lek To ៗ) word expansion
+4. Zero-width space & joiner normalization (\u200b, \u200c, \u200d)
+5. Khmer punctuation normalization (។, ៕, ៚, ៙, etc.)
 """
 import re
+import unicodedata
 
 KHMER_DIGITS = {
     '០': 0, '១': 1, '២': 2, '៣': 3, '៤': 4,
@@ -31,25 +32,29 @@ def number_to_khmer_words(n: int) -> str:
         return 'ដក ' + number_to_khmer_words(-n)
     if n == 0:
         return DIGIT_WORDS[0]
-    
+
     parts = []
-    
-    # Billions / Millions / Thousands / Hundreds / Tens
+
+    if n >= 1_000_000_000:
+        billions = n // 1_000_000_000
+        parts.append(number_to_khmer_words(billions) + ' ប៊ីលាន')
+        n %= 1_000_000_000
+
     if n >= 1_000_000:
         millions = n // 1_000_000
         parts.append(number_to_khmer_words(millions) + ' លាន')
         n %= 1_000_000
-        
+
     if n >= 1000:
         thousands = n // 1000
         parts.append(number_to_khmer_words(thousands) + ' ពាន់')
         n %= 1000
-        
+
     if n >= 100:
         hundreds = n // 100
         parts.append(DIGIT_WORDS[hundreds] + ' រយ')
         n %= 100
-        
+
     if n >= 10:
         tens = (n // 10) * 10
         rem = n % 10
@@ -61,10 +66,10 @@ def number_to_khmer_words(n: int) -> str:
             else:
                 parts.append(TENS_WORDS[tens] + ' ' + DIGIT_WORDS[rem])
         n = 0
-        
+
     if n > 0:
         parts.append(DIGIT_WORDS[n])
-        
+
     return ' '.join(parts).strip()
 
 
@@ -77,22 +82,38 @@ class KhmerNormalizer:
             '៚': ' ',
             '៙': ' ',
             '៖': ' : ',
-            'ៗ': ' ',     # Lek To (repetition)
             '(': ' ', ')': ' ', '[': ' ', ']': ' ',
             '"': '', "'": '', '«': '', '»': '',
             ',': ' , ', '.': ' . ', '?': ' ? ', '!': ' ! ',
             ';': ' , ', ':': ' , ', '-': ' '
         }
 
+    def expand_lek_to(self, text: str) -> str:
+        """
+        Expand Khmer repetition mark (ៗ / Lek To).
+        Repeats the preceding Khmer word or syllable (e.g. 'ញឹកញាប់ៗ' -> 'ញឹកញាប់ ញឹកញាប់').
+        """
+        if 'ៗ' not in text:
+            return text
+
+        pattern = r'([\u1780-\u17DD]+)\s*ៗ'
+        max_iter = 10
+        while 'ៗ' in text and max_iter > 0:
+            new_text = re.sub(pattern, r'\1 \1', text)
+            if new_text == text:
+                text = text.replace('ៗ', '')
+                break
+            text = new_text
+            max_iter -= 1
+        return text
+
     def normalize_numbers(self, text: str) -> str:
         """Find all Khmer and Arabic numbers and replace with spoken Khmer words."""
-        # Replace Khmer digits with ASCII digits first for parsing
         def replace_khmer_digits(match):
             kh_str = match.group(0)
             val = int(''.join(str(KHMER_DIGITS[ch]) for ch in kh_str))
             return ' ' + number_to_khmer_words(val) + ' '
 
-        # Replace Arabic numbers
         def replace_arabic_digits(match):
             val = int(match.group(0))
             return ' ' + number_to_khmer_words(val) + ' '
@@ -106,21 +127,31 @@ class KhmerNormalizer:
         if not text:
             return ""
 
-        # 1. Unicode NFKD / NFC normalization
-        import unicodedata
+        # 1. Unicode NFC normalization
         text = unicodedata.normalize('NFC', text)
 
-        # 2. Strip Zero-Width Spaces and Invisible Formatting Characters
-        text = re.sub(r'[\u200B\u200C\u200D\uFEFF\u00A0]', ' ', text)
+        # 2. Expand Khmer Lek To (ៗ) BEFORE punctuation mapping
+        text = self.expand_lek_to(text)
 
-        # 3. Number expansion
+        # 3. Handle zero-width characters properly:
+        # \u200B (ZWSP) is word separator -> space
+        # \u200C (ZWNJ) and \u200D (ZWJ) -> remove without space to avoid splitting ligatures
+        # \uFEFF (BOM) -> remove
+        # \u00A0 (NBSP) -> space
+        text = text.replace('\u200B', ' ')
+        text = text.replace('\u00A0', ' ')
+        text = text.replace('\u200C', '')
+        text = text.replace('\u200D', '')
+        text = text.replace('\uFEFF', '')
+
+        # 4. Number expansion
         text = self.normalize_numbers(text)
 
-        # 4. Normalize Punctuation
+        # 5. Normalize Punctuation
         for p, rep in self.punct_map.items():
             text = text.replace(p, rep)
 
-        # 5. Clean extra whitespace
+        # 6. Clean extra whitespace
         text = re.sub(r'\s+', ' ', text).strip()
 
         return text
@@ -128,6 +159,6 @@ class KhmerNormalizer:
 
 if __name__ == "__main__":
     norm = KhmerNormalizer()
-    sample = "ស្ពាន កំពង់ ចម្លង អ្នកលឿង តម្លៃ ១៥០ ដុល្លារ នៅ ឆ្នាំ ២០២៦។"
+    sample = "ស្ពាន កំពង់ ចម្លង អ្នកលឿង តម្លៃ ១៥០ ដុល្លារ នៅ ឆ្នាំ ២០២៦ ដើរលឿនៗ។"
     print("Original:", sample)
     print("Normalized:", norm.normalize(sample))

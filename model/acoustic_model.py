@@ -53,6 +53,8 @@ class SelfAttention(nn.Module):
         qkv = qkv.view(B, T, 3, self.n_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
         scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
+        if key_padding_mask is not None:
+            scores = scores.masked_fill(key_padding_mask[:, None, None, :], torch.finfo(scores.dtype).min)
         attn = F.softmax(scores, dim=-1)
         attn = self.dropout(attn)
         out = torch.matmul(attn, v).permute(0, 2, 1, 3).reshape(B, T, self.d_model)
@@ -80,6 +82,8 @@ class FFTBlock(nn.Module):
         ff = self.conv2(self.act(self.conv1(ff)))
         ff = ff.transpose(1, 2)
         x = self.norm2(x + self.dropout(ff))
+        if key_padding_mask is not None:
+            x = x.masked_fill(key_padding_mask.unsqueeze(-1), 0.0)
         return x
 
 
@@ -105,20 +109,29 @@ class DurationPredictor(nn.Module):
 
 
 class LengthRegulator(nn.Module):
-    """Expands each encoder frame by its (integer) predicted duration."""
+    """
+    Expands each encoder frame by its (integer) predicted duration.
+    Fully vectorized, ONNX-exportable implementation without Python loops or .item() calls.
+    """
 
     def forward(self, x, durations, max_len: int = None):
-        # x: (B, T, C), durations: (B, T) int
-        lengths = durations.sum(dim=1)
-        outputs = []
-        for b in range(x.size(0)):
-            expanded = torch.repeat_interleave(x[b], durations[b], dim=0)
-            outputs.append(expanded)
-        target_len = max_len or int(lengths.max().item())
-        padded = x.new_zeros(x.size(0), target_len, x.size(2))
-        for b, o in enumerate(outputs):
-            padded[b, : o.size(0)] = o[:target_len]
-        return padded, lengths
+        # x: (B, T_text, C), durations: (B, T_text) int
+        durations = torch.clamp(durations, min=0)
+        lengths = durations.sum(dim=-1)
+
+        if max_len is not None:
+            target_len = max_len
+        else:
+            target_len = lengths.max()
+
+        cum_durs = torch.cumsum(durations, dim=-1)
+        starts = cum_durs - durations
+
+        grid = torch.arange(target_len, device=x.device, dtype=durations.dtype).unsqueeze(0).unsqueeze(-1)
+        mask = ((grid >= starts.unsqueeze(1)) & (grid < cum_durs.unsqueeze(1))).to(x.dtype)
+
+        expanded = torch.bmm(mask, x)
+        return expanded, lengths
 
 
 class Encoder(nn.Module):
@@ -163,28 +176,34 @@ class FastSpeechLite(nn.Module):
         self.length_regulator = LengthRegulator()
         self.decoder = Decoder(d_model, n_heads, d_ff, n_dec_layers, n_mels, dropout)
 
-    def forward(self, phoneme_ids, durations=None, max_mel_len=None):
+    def forward(self, phoneme_ids, durations=None, max_mel_len=None, speed: float = 1.0):
         """
-        Training mode (durations given, ground truth from MFA): teacher-forces the
-        length regulator with real durations, returns predicted mel + predicted
-        log-durations (for the duration-predictor loss).
+        Training mode (durations given): teacher-forces the length regulator with real durations,
+        returns predicted mel + predicted log-durations.
 
-        Inference mode (durations=None): predicts durations itself, rounds to
-        nearest int, and generates mel end-to-end from text alone.
+        Inference mode (durations=None): predicts durations itself, rounds to nearest int,
+        and generates mel end-to-end.
         """
-        enc_out = self.encoder(phoneme_ids)
+        phon_mask = phoneme_ids.eq(0)
+        enc_out = self.encoder(phoneme_ids, key_padding_mask=phon_mask)
         log_duration_pred = self.duration_predictor(enc_out)
 
         if durations is None:
-            durations = torch.clamp(torch.round(torch.exp(log_duration_pred) - 1), min=1).long()
+            if speed <= 0:
+                raise ValueError("speed must be greater than zero")
+            durations = torch.clamp(
+                torch.round((torch.exp(log_duration_pred) - 1) / speed), min=1
+            ).long()
+            durations = durations.masked_fill(phon_mask, 0)
 
         expanded, out_lens = self.length_regulator(enc_out, durations, max_len=max_mel_len)
-        mel = self.decoder(expanded)
+        mel_mask = torch.arange(expanded.size(1), device=expanded.device)[None, :] >= out_lens[:, None]
+        mel = self.decoder(expanded, key_padding_mask=mel_mask)
+        mel = mel.masked_fill(mel_mask.unsqueeze(-1), 0.0)
         return mel, log_duration_pred, out_lens
 
 
 if __name__ == "__main__":
-    # sanity check: dummy forward pass
     model = FastSpeechLite(vocab_size=100)
     phon = torch.randint(1, 100, (2, 20))
     durs = torch.randint(1, 5, (2, 20))

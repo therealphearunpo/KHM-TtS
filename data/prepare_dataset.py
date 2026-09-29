@@ -4,16 +4,16 @@ Preprocess an audio dataset (OpenSLR 42 / LJSpeech format):
   dataset/metadata.csv (id|transcript) OR dataset/line_index.tsv (id\\ttext)
 
 Produces:
-  dataset/processed/mels/<id>.npy        mel-spectrograms, shape (n_mels, T)
-  dataset/processed/phonemes/<id>.npy    token/phoneme id sequence, shape (L,)
-  dataset/processed/wavs_22k/<id>.wav    resampled 22.05kHz mono wavs
-  dataset/processed/vocab.json           token/phoneme -> id mapping
-  dataset/processed/train_manifest.txt   training split (90%)
-  dataset/processed/val_manifest.txt     validation split (5%)
-  dataset/processed/test_manifest.txt    testing split (5%)
+  processed/mels/<id>.npy        mel-spectrograms, shape (n_mels, T)
+  processed/phonemes/<id>.npy    token id sequence, shape (L,)
+  processed/wavs_22k/<id>.wav    resampled 22.05kHz mono normalized wavs
+  processed/vocab.json           token -> id mapping
+  processed/train_manifest.txt   training split (90%)
+  processed/val_manifest.txt     validation split (5%)
+  processed/test_manifest.txt    testing split (5%)
 
 Usage:
-  python data/prepare_dataset.py --data_dir km_kh_male
+  python data/prepare_dataset.py --data_dir km_kh_male --out_dir processed
 """
 import argparse
 import json
@@ -60,8 +60,11 @@ def get_resampler(orig_sr: int) -> T.Resample:
     return _resamplers[orig_sr]
 
 
-def trim_silence(wav: np.ndarray, top_db: float = 30.0) -> np.ndarray:
-    """Trim silence from beginning and end based on energy threshold."""
+def trim_silence(wav: np.ndarray, top_db: float = 45.0, pad_sec: float = 0.05) -> np.ndarray:
+    """
+    Trim silence from beginning and end with a safe threshold and padding.
+    Keeping a 50ms buffer prevents clipping initial/final unvoiced consonants.
+    """
     if len(wav) == 0:
         return wav
     energy = np.abs(wav)
@@ -72,8 +75,19 @@ def trim_silence(wav: np.ndarray, top_db: float = 30.0) -> np.ndarray:
     non_silent = np.where(energy > thresh)[0]
     if len(non_silent) == 0:
         return wav
-    start, end = non_silent[0], non_silent[-1] + 1
+
+    pad_samples = int(SAMPLE_RATE * pad_sec)
+    start = max(0, non_silent[0] - pad_samples)
+    end = min(len(wav), non_silent[-1] + 1 + pad_samples)
     return wav[start:end]
+
+
+def normalize_audio(wav: np.ndarray, target_peak: float = 0.95) -> np.ndarray:
+    """Normalize peak audio amplitude to avoid clipping while keeping volume consistent."""
+    peak = np.max(np.abs(wav))
+    if peak > 0:
+        wav = (wav / peak) * target_peak
+    return wav.astype(np.float32)
 
 
 def build_mel(wav_np: np.ndarray) -> np.ndarray:
@@ -111,12 +125,28 @@ def load_metadata(data_dir: str):
     else:
         raise FileNotFoundError(f"Neither metadata.csv nor line_index.tsv found in {data_dir}")
 
+    seen = set()
+    duplicates = []
+    for utt_id, _ in items:
+        if utt_id in seen:
+            duplicates.append(utt_id)
+        seen.add(utt_id)
+    if duplicates:
+        print(f"Notice: {len(duplicates)} duplicate IDs encountered; keeping first occurrence.")
+        deduped = []
+        seen.clear()
+        for uid, txt in items:
+            if uid not in seen:
+                seen.add(uid)
+                deduped.append((uid, txt))
+        items = deduped
     return items
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_dir", required=True, help="Path to dataset directory")
+    ap.add_argument("--data_dir", default="km_kh_male", help="Path to dataset directory")
+    ap.add_argument("--out_dir", default="processed", help="Path to output processed directory")
     ap.add_argument("--seed", type=int, default=42, help="Random seed for data splits")
     args = ap.parse_args()
 
@@ -124,15 +154,21 @@ def main():
     np.random.seed(args.seed)
 
     wav_dir = os.path.join(args.data_dir, "wavs")
-    out_dir = os.path.join(args.data_dir, "processed")
+    out_dir = args.out_dir
     mel_dir = os.path.join(out_dir, "mels")
     phon_dir = os.path.join(out_dir, "phonemes")
     wav_out_dir = os.path.join(out_dir, "wavs_22k")
     for d in (mel_dir, phon_dir, wav_out_dir):
         os.makedirs(d, exist_ok=True)
 
+    web_models_dir = os.path.join("web", "models")
+    os.makedirs(web_models_dir, exist_ok=True)
+
     items = load_metadata(args.data_dir)
     print(f"Loaded {len(items)} items from metadata.")
+    missing = [utt_id for utt_id, _ in items if not os.path.exists(os.path.join(wav_dir, f"{utt_id}.wav"))]
+    if missing:
+        print(f"Warning: {len(missing)} metadata entries have no matching WAV (first: {missing[:3]})")
 
     # Initialize Tokenizer and build vocabulary
     tokenizer = KhmerTokenizer()
@@ -147,10 +183,10 @@ def main():
             continue
 
         try:
-            # Read audio and resample to 22050Hz
+            # Read audio and resample to 22050Hz mono
             wav_raw, orig_sr = sf.read(wav_path)
             if len(wav_raw.shape) > 1:
-                wav_raw = wav_raw.mean(axis=1)  # convert to mono
+                wav_raw = wav_raw.mean(axis=1)
             if orig_sr != SAMPLE_RATE:
                 resampler = get_resampler(orig_sr)
                 wav_t = resampler(torch.from_numpy(wav_raw).float().unsqueeze(0)).squeeze(0)
@@ -158,10 +194,13 @@ def main():
             else:
                 wav = wav_raw.astype(np.float32)
 
-            # Trim leading/trailing silence
-            wav = trim_silence(wav, top_db=30.0)
+            # Trim leading/trailing silence safely (45 dB threshold + 50ms buffer)
+            wav = trim_silence(wav, top_db=45.0, pad_sec=0.05)
             if len(wav) < HOP_LENGTH:
                 continue
+
+            # Normalize amplitude
+            wav = normalize_audio(wav, target_peak=0.95)
 
             sf.write(os.path.join(wav_out_dir, f"{utt_id}.wav"), wav, SAMPLE_RATE)
 
@@ -173,7 +212,7 @@ def main():
             token_ids = np.array(tokenizer.text_to_ids(text), dtype=np.int64)
             np.save(os.path.join(phon_dir, f"{utt_id}.npy"), token_ids)
 
-            # Label file for forced aligner
+            # Label file for aligner
             with open(os.path.join(wav_out_dir, f"{utt_id}.lab"), "w", encoding="utf-8") as lf:
                 lf.write(tokenizer.normalizer.normalize(text))
 
@@ -181,10 +220,9 @@ def main():
         except Exception as e:
             print(f"Error processing {utt_id}: {e}")
 
-    # Save vocabulary
+    # Save vocabulary to processed/ and web/models/
     tokenizer.save_vocab(os.path.join(out_dir, "vocab.json"))
-    # Also mirror to web/models/vocab.json
-    tokenizer.save_vocab("web/models/vocab.json")
+    tokenizer.save_vocab(os.path.join(web_models_dir, "vocab.json"))
 
     # Split dataset into Train (90%), Val (5%), Test (5%)
     random.shuffle(manifest)
@@ -208,7 +246,7 @@ def main():
 
     print(f"\nPreprocessing Complete!")
     print(f"Total: {total} | Train: {len(train_ids)} | Val: {len(val_ids)} | Test: {len(test_ids)}")
-    print(f"Vocab size: {len(vocab)} saved to {out_dir}/vocab.json")
+    print(f"Vocab size: {len(vocab)} saved to {out_dir}/vocab.json and {web_models_dir}/vocab.json")
 
 
 if __name__ == "__main__":
