@@ -1,6 +1,9 @@
 .venv/
+.venv-align/
 __pycache__/
 *.py[cod]
+.ipynb_checkpoints/
+scratch/
 
 # Local/generated runtime artifacts
 *.log
@@ -15,5 +18,4 @@ km_kh_male/processed/
 processed/
 *.zip
 *.tar.gz
-*.pt
-web/models/*.onnx
+

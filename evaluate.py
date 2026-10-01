@@ -19,7 +19,7 @@ import torch.nn.functional as F
 
 from model.acoustic_model import FastSpeechLite
 from model.vocoder import Generator
-from data.prepare_dataset import SAMPLE_RATE
+SAMPLE_RATE = 22050  # matches data/prepare_dataset.py
 
 
 def compute_mcd(mel_pred: np.ndarray, mel_target: np.ndarray) -> float:

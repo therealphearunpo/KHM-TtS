@@ -6,59 +6,62 @@ A lightweight, non-autoregressive Khmer Text-to-Speech (TTS) pipeline designed f
 
 ---
 
-## 📁 Project Directory Structure
+## Project Structure
 
-```text
+```
 KHM-TtS/
-├── checkpoints/                  # 💾 Model Checkpoint Storage
-│   ├── acoustic/                 # FastSpeechLite checkpoints (best_acoustic.pt)
-│   └── vocoder/                  # HiFiGAN-tiny checkpoints (best_vocoder.pt)
-│
-├── data/                         # 🛠️ Data Preprocessing & Alignment Tools
-│   ├── align_durations.py        # External MFA TextGrid duration converter
-│   ├── build_lexicon.py          # Khmer word-to-token lexicon builder
-│   ├── extract_durations.py      # Energy-guided acoustic duration extractor
-│   ├── khmer_normalizer.py       # Khmer text normalizer (Lek To ៗ, numerals, ZWSP)
-│   ├── khmer_tokenizer.py        # Khmer grapheme/token encoder & decoder
-│   └── prepare_dataset.py        # 22.05kHz resampling, silence trim, peak norm, mels
-│
-├── km_kh_male/                   # 🎙️ Raw Dataset (OpenSLR 42)
-│   ├── line_index.tsv            # Raw index TSV
-│   ├── metadata.csv              # Pipe-separated metadata (id|transcript)
-│   └── wavs/                     # 48 kHz studio audio WAVs (2,906 files)
-│
-├── model/                        # 🧠 Neural Network Architectures
-│   ├── acoustic_model.py         # FastSpeechLite (Transformer + ONNX LengthRegulator)
-│   └── vocoder.py                # HiFiGAN-tiny Generator & Multi-Scale Discriminator
-│
-├── processed/                    # 📦 Processed Training Data (22.05 kHz)
-│   ├── durations/                # Extracted frame duration arrays (.npy)
-│   ├── mels/                     # Log mel-spectrogram arrays (.npy)
-│   ├── phonemes/                 # Token integer ID sequences (.npy)
-│   ├── wavs_22k/                 # Resampled & normalized WAV files
-│   ├── vocab.json                # 77-token vocabulary mapping
-│   ├── train_manifest.txt        # 90% training split (2,614 utterances)
-│   ├── val_manifest.txt          # 5% validation split (146 utterances)
-│   └── test_manifest.txt         # 5% held-out test split (146 utterances)
-│
-├── web/                          # 🌐 Web Studio & Dataset Explorer
-│   ├── index.html                # Modern glassmorphism Studio UI
-│   ├── style.css                 # Dark theme, dynamic glows & micro-animations
-│   ├── app.js                    # Live tokenization, playback, & synthesis controller
-│   ├── data/
-│   │   └── samples.json          # Searchable dataset utterances (2,906 entries)
-│   └── models/                   # ONNX artifacts & runtime dictionaries
-│       ├── vocab.json            # Model vocabulary
-│       ├── lexicon.json          # 4,347 words dictionary
-│       ├── acoustic.onnx         # Exported FastSpeechLite (Stage 1)
-│       └── vocoder.onnx          # Exported HiFiGAN-tiny (Stage 2)
-│
-├── evaluate.py                   # 📊 Evaluation script (Mel L1, MCD dB, RTF latency)
-├── export_onnx.py                # 🚀 Exports models to web/models/
-├── infer.py                      # 🔊 End-to-end synthesis CLI & Python API
-├── server.py                     # ⚡ Local Studio Web Server & Audio Streaming (Port 8000)
-├── train_acoustic.py             # 🎯 Train FastSpeechLite (Acoustic model)
-└── train_vocoder.py              # 🎯 Train HiFiGAN-tiny (Neural vocoder)
+├── data/                               # Data preprocessing & alignment scripts
+│   ├── khmer_normalizer.py             # Unicode NFC, number expansion, Lek To
+│   ├── khmer_tokenizer.py              # Tokenizer & character vocab mapping
+│   ├── build_lexicon.py                # Phoneme / grapheme lexicon builder
+│   ├── prepare_dataset.py              # 22.05kHz audio resampling & mel extraction
+│   └── align_whisperx.py               # Token & phoneme duration aligner
+├── model/                              # PyTorch neural network architectures
+│   ├── acoustic_model.py               # FastSpeechLite (Encoder, DurationPredictor, Decoder)
+│   └── vocoder.py                      # HiFiGAN-tiny & Griffin-Lim vocoders
+├── models/                             # Trained checkpoints & weights
+│   └── acoustic_predict_model.pt       # Trained acoustic model weights
+├── web/                                # Lightweight Web Speech Studio UI
+│   ├── index.html                      # Interactive frontend
+│   └── static/                         # CSS / JS assets
+├── Khmer_TTS_Pipeline.ipynb            # 📓 End-to-end pipeline (Data -> Train -> Eval -> Infer)
+├── Khmer_TTS_Demo.ipynb                # 📓 Clean interactive audio synthesis demo
+├── history.csv                         # 📊 Epoch loss & validation metrics log
+├── requirements.txt                    # 📦 Project dependencies
+├── train_acoustic.py                   # 🏋️ Acoustic model training CLI
+├── train_vocoder.py                    # 🏋️ Vocoder training CLI
+├── infer.py                            # 🎙️ Direct inference CLI
+├── evaluate.py                         # 📈 Model benchmarking & MCD evaluation
+├── export_onnx.py                      # 📦 ONNX model export tool
+├── server.py                           # 🚀 Web Studio & Synthesis API server
+└── README.md                           # 📖 Project documentation
+```
+
+---
+
+## System Architecture
+
+The pipeline uses a decoupled two-stage architecture:
+1. **Acoustic Model (FastSpeechLite)**: Maps normalized Khmer text character tokens to 80-channel log-mel spectrograms in a single non-autoregressive forward pass.
+2. **Vocoder (HiFiGAN-tiny / Griffin-Lim)**: Converts predicted log-mel spectrograms into 22,050 Hz time-domain audio waveforms.
+
+```
+Khmer Text Input
+       │
+       ▼
+[Khmer Normalizer] (NFC, Lek To expansion, digits to words)
+       │
+       ▼
+[Khmer Tokenizer]  (Character-level vocab: 77 tokens)
+       │
+       ▼
+[FastSpeechLite]   (Encoder 4x FFT ──► Duration Predictor ──► Length Regulator ──► Decoder 4x FFT)
+       │
+       ▼ Mel-spectrogram (80 bins)
+[HiFiGAN-tiny / Griffin-Lim Fallback]
+       │
+       ▼
+22,050 Hz Audio Waveform (.wav)
 ```
 
 ---
