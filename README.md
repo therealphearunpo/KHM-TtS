@@ -24,17 +24,17 @@ KHM-TtS/
 ├── web/                                # Lightweight Web Speech Studio UI
 │   ├── index.html                      # Interactive frontend
 │   └── static/                         # CSS / JS assets
-├── Khmer_TTS_Pipeline.ipynb            # 📓 End-to-end pipeline (Data -> Train -> Eval -> Infer)
-├── Khmer_TTS_Demo.ipynb                # 📓 Clean interactive audio synthesis demo
-├── history.csv                         # 📊 Epoch loss & validation metrics log
-├── requirements.txt                    # 📦 Project dependencies
-├── train_acoustic.py                   # 🏋️ Acoustic model training CLI
-├── train_vocoder.py                    # 🏋️ Vocoder training CLI
-├── infer.py                            # 🎙️ Direct inference CLI
-├── evaluate.py                         # 📈 Model benchmarking & MCD evaluation
-├── export_onnx.py                      # 📦 ONNX model export tool
-├── server.py                           # 🚀 Web Studio & Synthesis API server
-└── README.md                           # 📖 Project documentation
+├── Khmer_TTS_Pipeline.ipynb            #  End-to-end pipeline (Data -> Train -> Eval -> Infer)
+├── Khmer_TTS_Demo.ipynb                #  Clean interactive audio synthesis demo
+├── history.csv                         #  Epoch loss & validation metrics log
+├── requirements.txt                    #  Project dependencies
+├── train_acoustic.py                   #  Acoustic model training CLI
+├── train_vocoder.py                    #  Vocoder training CLI
+├── infer.py                            #  Direct inference CLI
+├── evaluate.py                         #  Model benchmarking & MCD evaluation
+├── export_onnx.py                      #  ONNX model export tool
+├── server.py                           #  Web Studio & Synthesis API server
+└── README.md                           #  Project documentation
 ```
 
 ---
@@ -66,7 +66,7 @@ Khmer Text Input
 
 ---
 
-## ⚡ Quickstart: Training & Running Web Studio
+##  Quickstart: Training & Running Web Studio
 
 ### 1. Install Dependencies
 ```bash
